@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Precificação – Dentista Milionária</title>
+  <meta name="description" content="Ferramenta de precificação odontológica: custo da hora clínica, custos variáveis, lucro e preço de trabalho.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦷</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>@media print { .no-print, button, input { display:none !important } body { background:white } }</style>
+</head>
+<body class="bg-neutral-50">
+<div id="root"></div>
+<script type="text/babel">
+const { useEffect, useMemo, useState } = React;
+const brl = (n) => (isFinite(n) ? n : 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const pct = (n) => `${(isFinite(n) ? n : 0).toFixed(1)}%`;
+const parseNum = (v) => { if (typeof v === "number") return v; const c = v.replace(/[^0-9,.-]/g,"").replace(/\./g,"").replace(",","."); const n = parseFloat(c); return isFinite(n) ? n : 0; };
+const stateToQuery = (state) => { try { const json = JSON.stringify(state); return new URLSearchParams({ s: btoa(unescape(encodeURIComponent(json))) }).toString(); } catch { return ""; } };
+const queryToState = (def) => { try { const p = new URLSearchParams(window.location.search); const s = p.get("s"); if (!s) return def; const json = decodeURIComponent(escape(atob(s))); const obj = JSON.parse(json); return { ...def, ...obj }; } catch { return def; } };
+const DEFAULTS = {fixos:{proLabore:0,salariosFuncionarios:0,consultorias:0,provisionamentoFerias13:0,gps:0,fgts:0,contabilidade:0,taxasDiversas:0,assistenciaJuridica:0,cro:0,sindicatos:0,uniforme:0,segurancaAlarme:0,aluguelIptuCondominio:0,energiaAgua:0,tvInternetTelefone:0,encargosBancarios:0,materialHigieneLimpeza:0,dedetizacao:0,manutencoesEquipamentos:0,software:0,brindesKitHigiene:0,cafeAcucar:0,grafica:0,site:0,marketing:0,materialEscritorio:0,fundoReserva:0,fundoMelhorias:0,dental:0,outros:0,},horasAtendimentoMesTodasCadeiras:0,procedimento:{nome:"",preco:0,minutos:0},variaveis:{taxaCartaoPercent:0,comissoesPercent:0,inadimplenciaPercent:0,impostoPercent:0,custoMaterialBRL:0,laboratorioBRL:0,},dentistaComissaoBRL:0,margemNegociacaoPercent:0,};
+const NiceLabel = {proLabore:"Pró-labore",salariosFuncionarios:"Salários Funcionários / Transporte/ Benefícios",consultorias:"Consultorias",provisionamentoFerias13:"Provisionamento Férias e 13º",gps:"GPS",fgts:"FGTS",contabilidade:"Contabilidade",taxasDiversas:"Taxas: incêndio, sanitária, outras",assistenciaJuridica:"Assistência Jurídica",cro:"CRO",sindicatos:"Sindicatos",uniforme:"Uniforme",segurancaAlarme:"Segurança / Alarme",aluguelIptuCondominio:"Aluguel / IPTU/ Condomínio",energiaAgua:"Energia / Água",tvInternetTelefone:"TV, Internet, Telefone",encargosBancarios:"Encargos Bancários",materialHigieneLimpeza:"Material Higiene / Limpeza",dedetizacao:"Dedetização",manutencoesEquipamentos:"Manutenções Equipamentos",software:"Software",brindesKitHigiene:"Brindes / kit Higiene",cafeAcucar:"Café e açúcar (comes e bebes)",grafica:"Gráfica",site:"Site (domínio / hospedagem)",marketing:"Marketing (anúncios + agência)",materialEscritorio:"Material escritório",fundoReserva:"Fundo de reserva",fundoMelhorias:"Fundo de melhorias",dental:"Dental",outros:"Outros"};
+const Label = ({children}) => <span className="text-sm text-neutral-600">{children}</span>;
+function Field({ label, value, onChange, suffix, placeholder }){return (<label className="flex flex-col gap-1"><Label>{label}</Label><div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm"><input className="w-full outline-none" value={value} onChange={(e)=>onChange(parseNum(e.target.value))} type="text" inputMode="decimal" placeholder={placeholder||""} />{suffix && <span className="ml-2 text-neutral-500 text-sm">{suffix}</span>}</div></label>);}
+const Info = ({label, value}) => (<div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">{label}</p><p className="text-base font-semibold">{value}</p></div>);
+const Card = ({title, children}) => (<section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"><h2 className="mb-4 text-lg font-semibold">{title}</h2>{children}</section>);
+const CopyLink = () => { const [ok,setOk]=React.useState(false); return (<button className={"rounded-2xl px-4 py-2 text-sm "+(ok?"bg-green-600 text-white":"bg-neutral-900 text-white")} onClick={async()=>{try{await navigator.clipboard.writeText(window.location.href);setOk(true);setTimeout(()=>setOk(false),1500);}catch{}}}>{ok?"Link copiado!":"Copiar link com dados"}</button>); };
+function App(){
+  const [st, setSt] = React.useState(queryToState(DEFAULTS));
+  React.useEffect(()=>{ const q=stateToQuery(st); const url=`${window.location.pathname}?${q}`; window.history.replaceState({}, "", url); }, [st]);
+  const totalFixos = React.useMemo(()=> Object.values(st.fixos).reduce((a,b)=>a+parseNum(b),0), [st.fixos]);
+  const horasEfetivasMes = React.useMemo(()=> st.horasAtendimentoMesTodasCadeiras * 0.8, [st.horasAtendimentoMesTodasCadeiras]);
+  const custoHora = React.useMemo(()=> horasEfetivasMes ? totalFixos / horasEfetivasMes : 0, [totalFixos, horasEfetivasMes]);
+  const custoMin = React.useMemo(()=> custoHora / 60, [custoHora]);
+  const vTaxaCartaoBRL = React.useMemo(()=> st.procedimento.preco * (st.variaveis.taxaCartaoPercent/100), [st.procedimento.preco, st.variaveis.taxaCartaoPercent]);
+  const vComissoesBRL = React.useMemo(()=> st.procedimento.preco * (st.variaveis.comissoesPercent/100), [st.procedimento.preco, st.variaveis.comissoesPercent]);
+  const vInadimplenciaBRL = React.useMemo(()=> st.procedimento.preco * (st.variaveis.inadimplenciaPercent/100), [st.procedimento.preco, st.variaveis.inadimplenciaPercent]);
+  const vImpostoBRL = React.useMemo(()=> st.procedimento.preco * (st.variaveis.impostoPercent/100), [st.procedimento.preco, st.variaveis.impostoPercent]);
+  const matPercent = React.useMemo(()=> st.procedimento.preco>0 ? (st.variaveis.custoMaterialBRL / st.procedimento.preco)*100 : 0, [st.variaveis.custoMaterialBRL, st.procedimento.preco]);
+  const labPercent = React.useMemo(()=> st.procedimento.preco>0 ? (st.variaveis.laboratorioBRL / st.procedimento.preco)*100 : 0, [st.variaveis.laboratorioBRL, st.procedimento.preco]);
+  const totalVariavelBRL = React.useMemo(()=> vTaxaCartaoBRL + vComissoesBRL + vInadimplenciaBRL + vImpostoBRL + st.variaveis.custoMaterialBRL + st.variaveis.laboratorioBRL, [vTaxaCartaoBRL, vComissoesBRL, vInadimplenciaBRL, vImpostoBRL, st.variaveis.custoMaterialBRL, st.variaveis.laboratorioBRL]);
+  const totalVariavelPercent = React.useMemo(()=> st.procedimento.preco>0 ? (totalVariavelBRL / st.procedimento.preco)*100 : 0, [totalVariavelBRL, st.procedimento.preco]);
+  const dentistaPercent = React.useMemo(()=> st.procedimento.preco>0 ? (st.dentistaComissaoBRL/st.procedimento.preco)*100 : 0, [st.dentistaComissaoBRL, st.procedimento.preco]);
+  const custoFixoProcedimento = React.useMemo(()=> custoMin * st.procedimento.minutos, [custoMin, st.procedimento.minutos]);
+  const custoTotal = React.useMemo(()=> custoFixoProcedimento + totalVariavelBRL + st.dentistaComissaoBRL, [custoFixoProcedimento, totalVariavelBRL, st.dentistaComissaoBRL]);
+  const lucroBRL = React.useMemo(()=> st.procedimento.preco - custoTotal, [st.procedimento.preco, custoTotal]);
+  const margemLiquidaPercent = React.useMemo(()=> st.procedimento.preco>0 ? (lucroBRL/st.procedimento.preco)*100 : 0, [lucroBRL, st.procedimento.preco]);
+  const precoTrabalho = React.useMemo(()=> { const m = st.margemNegociacaoPercent/100; return (1-m)>0 ? st.procedimento.preco/(1-m) : st.procedimento.preco; }, [st.margemNegociacaoPercent, st.procedimento.preco]);
+  const reset = ()=>setSt(DEFAULTS);
+  return (<div className="min-h-screen bg-neutral-50 px-4 py-8"><div className="mx-auto max-w-6xl space-y-8">
+    <header className="mb-2 flex items-center justify-between">
+      <div><h1 className="text-2xl font-bold">Precificação – Dentista Milionária</h1><p className="text-neutral-500 text-sm">Ociosidade de 20% aplicada automaticamente nas horas efetivas.</p></div>
+      <div className="flex gap-2 no-print">
+        <button className="rounded-2xl border border-neutral-300 px-4 py-2 text-sm" onClick={reset}>Restaurar</button>
+        <button className="rounded-2xl bg-black px-4 py-2 text-sm font-medium text-white" onClick={()=>window.print()}>Exportar PDF</button>
+        <CopyLink />
+      </div>
+    </header>
+
+    <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"><h2 className="mb-4 text-lg font-semibold">Custo da Hora Clínica</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {Object.keys(DEFAULTS.fixos).map((k)=> (<label key={k} className="flex flex-col gap-1">
+          <span className="text-sm text-neutral-600">{NiceLabel[k]||k}</span>
+          <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+            <input className="w-full outline-none" value={st.fixos[k]} onChange={(e)=>setSt({...st, fixos:{...st.fixos, [k]: parseNum(e.target.value)}})} type="text" inputMode="decimal" />
+            <span className="ml-2 text-neutral-500 text-sm">R$</span>
+          </div>
+        </label>))}
+      </div>
+      <div className="mt-8 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 p-4">
+        <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">Total de horas de atendimento no mês (todas as cadeiras)</span>
+          <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+            <input className="w-full outline-none" value={st.horasAtendimentoMesTodasCadeiras} onChange={(e)=>setSt({...st, horasAtendimentoMesTodasCadeiras: parseNum(e.target.value)})} type="text" inputMode="decimal" />
+            <span className="ml-2 text-neutral-500 text-sm">h</span>
+          </div>
+        </label>
+      </div>
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Total custos fixos</p><p className="text-base font-semibold">{brl(totalFixos)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Horas efetivas (−20% ociosidade)</p><p className="text-base font-semibold">{(horasEfetivasMes||0).toFixed(1)} h</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo por hora</p><p className="text-base font-semibold">{brl(custoHora)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo por minuto</p><p className="text-base font-semibold">{brl(custoMin)}</p></div>
+      </div>
+    </section>
+
+    <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"><h2 className="mb-4 text-lg font-semibold">Precificação do Procedimento</h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">Nome do procedimento</span>
+          <input className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm outline-none" value={st.procedimento.nome} onChange={(e)=>setSt({...st, procedimento:{...st.procedimento, nome:e.target.value}})} placeholder="Ex.: Lente de resina" />
+        </label>
+        <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">Preço</span>
+          <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+            <input className="w-full outline-none" value={st.procedimento.preco} onChange={(e)=>setSt({...st, procedimento:{...st.procedimento, preco: parseNum(e.target.value)}})} type="text" inputMode="decimal" />
+            <span className="ml-2 text-neutral-500 text-sm">R$</span>
+          </div>
+        </label>
+        <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">Minutos de execução</span>
+          <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+            <input className="w-full outline-none" value={st.procedimento.minutos} onChange={(e)=>setSt({...st, procedimento:{...st.procedimento, minutos: parseNum(e.target.value)}})} type="text" inputMode="decimal" />
+            <span className="ml-2 text-neutral-500 text-sm">min</span>
+          </div>
+        </label>
+      </div>
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo hora clínica</p><p className="text-base font-semibold">{brl(custoHora)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo por minuto</p><p className="text-base font-semibold">{brl(custoMin)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo fixo do procedimento</p><p className="text-base font-semibold">{brl(custoFixoProcedimento)}</p></div>
+      </div>
+    </section>
+
+    <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"><h2 className="mb-4 text-lg font-semibold">Custos Variáveis</h2>
+      <div className="grid grid-cols-1 gap-3">
+        {[
+          { key: 'taxaCartaoPercent', label: 'Taxa de cartão', valueBRL: vTaxaCartaoBRL },
+          { key: 'comissoesPercent', label: 'Comissões', valueBRL: vComissoesBRL },
+          { key: 'inadimplenciaPercent', label: 'Inadimplência', valueBRL: vInadimplenciaBRL },
+          { key: 'impostoPercent', label: 'Imposto', valueBRL: vImpostoBRL },
+        ].map((row) => (
+          <div key={row.key} className="grid grid-cols-2 gap-4 items-end">
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">{row.label} (R$)</p><p className="text-base font-semibold">{brl(row.valueBRL)}</p></div>
+            <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">{row.label}</span>
+              <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+                <input className="w-full outline-none" value={st.variaveis[row.key]} onChange={(e)=>setSt({...st, variaveis:{...st.variaveis, [row.key]: parseNum(e.target.value)}})} type="text" inputMode="decimal" />
+                <span className="ml-2 text-neutral-500 text-sm">%</span>
+              </div>
+            </label>
+          </div>
+        ))}
+        <div className="grid grid-cols-2 gap-4 items-end">
+          <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">Custo de material (R$)</span>
+            <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+              <input className="w-full outline-none" value={st.variaveis.custoMaterialBRL} onChange={(e)=>setSt({...st, variaveis:{...st.variaveis, custoMaterialBRL: parseNum(e.target.value)}})} type="text" inputMode="decimal" />
+              <span className="ml-2 text-neutral-500 text-sm">R$</span>
+            </div>
+          </label>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Material (% do preço)</p><p className="text-base font-semibold">{pct(matPercent)}</p></div>
+        </div>
+        <div className="grid grid-cols-2 gap-4 items-end">
+          <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">Laboratório (R$)</span>
+            <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+              <input className="w-full outline-none" value={st.variaveis.laboratorioBRL} onChange={(e)=>setSt({...st, variaveis:{...st.variaveis, laboratorioBRL: parseNum(e.target.value)}})} type="text" inputMode="decimal" />
+              <span className="ml-2 text-neutral-500 text-sm">R$</span>
+            </div>
+          </label>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Laboratório (% do preço)</p><p className="text-base font-semibold">{pct(labPercent)}</p></div>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo variável total (R$)</p><p className="text-base font-semibold">{brl(totalVariavelBRL)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo variável total (% do preço)</p><p className="text-base font-semibold">{pct(totalVariavelPercent)}</p></div>
+      </div>
+    </section>
+
+    <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"><h2 className="mb-4 text-lg font-semibold">Comissão do Dentista</h2>
+      <div className="grid grid-cols-2 gap-4 items-end">
+        <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">Comissão do dentista (R$)</span>
+          <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+            <input className="w-full outline-none" value={st.dentistaComissaoBRL} onChange={(e)=>setSt({...st, dentistaComissaoBRL: parseNum(e.target.value)})} type="text" inputMode="decimal" />
+            <span className="ml-2 text-neutral-500 text-sm">R$</span>
+          </div>
+        </label>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">% sobre o preço</p><p className="text-base font-semibold">{pct(dentistaPercent)}</p></div>
+      </div>
+    </section>
+
+    <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-sm"><h2 className="mb-4 text-lg font-semibold">Resumo Final</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Preço</p><p className="text-base font-semibold">{brl(st.procedimento.preco)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo fixo (proc.)</p><p className="text-base font-semibold">{brl(custoFixoProcedimento)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custos variáveis</p><p className="text-base font-semibold">{brl(totalVariavelBRL)}</p></div>
+      </div>
+      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Comissão dentista</p><p className="text-base font-semibold">{brl(st.dentistaComissaoBRL)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Custo total</p><p className="text-base font-semibold">{brl(custoTotal)}</p></div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Lucro (R$)</p><p className="text-base font-semibold">{brl(lucroBRL)}</p></div>
+      </div>
+      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Margem líquida</p><p className="text-base font-semibold">{pct(margemLiquidaPercent)}</p></div>
+        <label className="flex flex-col gap-1"><span className="text-sm text-neutral-600">Margem de negociação</span>
+          <div className="flex items-center rounded-2xl border border-neutral-200 bg-white px-3 py-2 shadow-sm">
+            <input className="w-full outline-none" value={st.margemNegociacaoPercent} onChange={(e)=>setSt({...st, margemNegociacaoPercent: parseNum(e.target.value)})} type="text" inputMode="decimal" />
+            <span className="ml-2 text-neutral-500 text-sm">%</span>
+          </div>
+        </label>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-sm"><p className="mb-1 text-neutral-500">Preço de trabalho</p><p className="text-base font-semibold">{brl(precoTrabalho)}</p></div>
+      </div>
+    </section>
+
+    <footer className="text-xs text-neutral-500">© ${"{new Date().getFullYear()}"} Cristal Dent — Ferramenta de apoio à decisão.</footer>
+  </div></div>);
+}
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
